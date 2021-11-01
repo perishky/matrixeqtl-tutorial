@@ -1,6 +1,6 @@
 # eQTL and meQTL practical in R
 
-May 2021
+Nov 2021
 
 Created by Matthew Suderman
 [matthew.suderman@bristol.ac.uk](mailto:matthew.suderman@bristol.ac.uk)
@@ -21,17 +21,20 @@ Created by Matthew Suderman
 
 Login to BlueCrystal using PuTTY. 
 
-Run the following command to access a compute node:
+Clone a copy of this tutorial in your home directory.
 ```
-qsub -I -q teaching -l nodes=1:ppn=1,walltime=02:00:00
+git clone perishky/matrixeqtl-tutorial
 ```
 
-All of the files for this practical
-are included with the GitHub repository that you have already cloned.
-
-Change to the directory in the repository set up for this practical:
+Run the following command to request an interactive session on a compute node:
 ```
-cd ~/genetic-epidemiology-practicals/Other-omics
+salloc --nodes=1 --ntasks=1 --mem=3G  --time=02:00:00
+srun --job-name="example" --pty bash -i
+```
+
+Change to cloned repository for this practical:
+```
+cd ~/matrixeqtl-tutorial
 ```
 
 It is good practice to save outputs to another directory
@@ -95,7 +98,7 @@ using multi-dimensional scaling (MDS).
 We will use PLINK for these computations.
 Please ensure that PLINK is installed before continuing.
 ```
-module add apps/plink2
+module add apps/plink/2.00
 ```
 
 Calculate genetic distances:
@@ -144,7 +147,7 @@ C2 - Position on second dimension.
 
 Start `R`. First you'll need to load the module:
 ```
-module add languages/R-3.6.2-gcc9.1.0
+module add languages/r/4.1.0
 ```
 
 To start R, simply type `R`.
