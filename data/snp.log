@@ -1,0 +1,29 @@
+PLINK v1.90b3v 64-bit (15 Jul 2015)
+Options in effect:
+  --file data/snp
+  --make-bed
+  --map3
+  --out data/snp
+
+Hostname: sscm-2nd4g32.cse.bris.ac.uk
+Working directory: /projects/MRC-IEU/users/ms13525/work/projects/meqtl-tutorial/20160418-genetic-epidemiology-short-course
+Start time: Mon Mar 14 09:43:58 2016
+
+Note: --map3 flag unnecessary (.map file format is autodetected).
+Random number seed: 1457948638
+515768 MB RAM detected; reserving 257884 MB for main workspace.
+Scanning .ped file... done.
+Performing single-pass .bed write (178232 variants, 57 people).
+--file: data/snp-temporary.bed + data/snp-temporary.bim +
+data/snp-temporary.fam written.
+178232 variants loaded from .bim file.
+57 people (29 males, 28 females) loaded from .fam.
+Using 1 thread (no multithreaded calculations invoked).
+Before main variant filters, 0 founders and 57 nonfounders present.
+Calculating allele frequencies... done.
+Total genotyping rate is 0.959197.
+178232 variants and 57 people pass filters and QC.
+Note: No phenotypes present.
+--make-bed to data/snp.bed + data/snp.bim + data/snp.fam ... done.
+
+End time: Mon Mar 14 09:43:59 2016
