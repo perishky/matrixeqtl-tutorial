@@ -9,27 +9,19 @@ Created by Matthew Suderman
 
 ## Objectives
 
-1. Prepare the data for analysis.<br>
-2. Conduct an eQTL analysis.<br>
-3. Produce plots to visually inspect findings.<br>
-4. (Optional) Conduct an meQTL analysis.<br>
-5. (Optional) Identify trios of associated genes, CpG sites and SNPs.
+1. Prepare the data for analysis<br>
+2. Conduct an eQTL analysis using the [MatrixEQTL R package](https://cran.r-project.org/web/packages/MatrixEQTL/index.html)<br>
+3. Produce plots to visually inspect findings<br>
+4. (Optional) Conduct an meQTL analysis<br>
+5. (Optional) Identify trios of associated genes, CpG sites and SNPs
 
 * * * 
 
 ## Preliminaries
 
-Login to BlueCrystal using PuTTY. 
-
 Clone a copy of this tutorial in your home directory.
 ```
 git clone perishky/matrixeqtl-tutorial
-```
-
-Run the following command to request an interactive session on a compute node:
-```
-salloc --nodes=1 --ntasks=1 --mem=3G  --time=02:00:00
-srun --job-name="example" --pty bash -i
 ```
 
 Change to cloned repository for this practical:
@@ -45,6 +37,27 @@ We create the output directory as follows:
 ```
 mkdir output
 ```
+
+### Specifics for University of Bristol users
+
+This tutorial can be run on BlueCrystal Phase 4. 
+Login to the system using [PuTTY](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html) 
+and the following server name: bc4login.acrc.bris.ac.uk 
+
+You shouldn't run this tutorial on the login node. 
+Run the following command to request an interactive session on a compute node:
+```
+salloc --nodes=1 --ntasks=1 --mem=3G  --time=02:00:00
+srun --job-name="example" --pty bash -i
+```
+
+Change to the repository directory and create the output directory.
+```
+cd ~/matrixeqtl-tutorial
+mkdir output
+```
+
+You are not ready to for analysis.
 
 ---
 
@@ -96,7 +109,9 @@ genetic distances between all pairs of individuals
 using multi-dimensional scaling (MDS).
 
 We will use PLINK for these computations.
-Please ensure that PLINK is installed before continuing.
+Please ensure that [PLINK](https://zzz.bwh.harvard.edu/plink/) is installed before continuing.
+
+On the Bluecrystal Phase 4 cluster, PLINK can be loaded as a module (so no need to install it).
 ```
 module add apps/plink/2.00
 ```
@@ -145,7 +160,9 @@ C2 - Position on second dimension.
 
 ## 1a. Preprocessing: Population stratification visually
 
-Start `R`. First you'll need to load the module:
+Ensure that [R](https://www.r-project.org/) is installed.
+
+On the Bluecrystal Phase 4 cluster, R can be loaded as a module (so no need to install it).
 ```
 module add languages/r/4.1.0
 ```
