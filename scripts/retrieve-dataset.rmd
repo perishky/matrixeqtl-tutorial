@@ -1,0 +1,284 @@
+# Obtaining data from GEO
+
+The dataset has been downloaded to `full.dir`.
+We load it from there (takes a few minutes).
+```{r}
+library(GEOquery)
+geo <- getGEO("GSE53261", destdir=full.dir)
+geo[["GSE53261-GPL11154_series_matrix.txt.gz"]] <- NULL
+names(geo)[which(names(geo) == "GSE53261-GPL13534_series_matrix.txt.gz")] <- "cpg"
+names(geo)[which(names(geo) == "GSE53261-GPL6883_series_matrix.txt.gz")]  <- "rna"
+names(geo)[which(names(geo) == "GSE53261-GPL6984_series_matrix.txt.gz")]  <- "snp"
+```
+
+```{r}
+print(object.size(geo), units="Gb")
+```
+
+
+# Convert GEO to CSV files
+
+```{r}
+sets <- list()
+for (name in names(geo)) 
+    sets[[name]] <- list(data=assayData(geo[[name]])$exprs,
+                         features=as(featureData(geo[[name]]), "data.frame"),
+                         samples=pData(geo[[name]]))
+```
+
+# Preprocess SNP data
+```{r}
+idx <- which(sets$snp$samples$molecule_ch1 == "genomic DNA")
+sets$snp$samples <- sets$snp$samples[idx,]
+sets$snp$data <- sets$snp$data[,idx]
+```
+
+```{r}
+library(scrime)
+sets$snp$data[which(sets$snp$data == "NC")] <- NA
+sets$snp$data <- recodeAffySNP(sets$snp$data, refAA=T, geno=0:2) ## 1 minute
+```
+With `refAA==F`, `AA` is coded 0, `AB` is coded 1 and `BB` is coded 2.
+Otherwise, the more frequent of `AA` or `BB` is code 0.
+
+# Obtain cell line identifier for each sample
+
+```{r}
+sets$cpg$samples$cell.line <- sets$cpg$samples$title
+sets$rna$samples$cell.line <- sets$rna$samples$source_name_ch1
+sets$snp$samples$cell.line <- sets$snp$samples$source_name_ch1
+```
+
+# Determine coordinates for each probe
+Use NCBI genome build 36 coordinates to locate probes.
+```{r}
+sets$cpg$features <- data.frame(geneid=rownames(sets$cpg$features),
+                                chr=as.character(sets$cpg$features$Chromosome_36),
+                                left=as.integer(as.character(sets$cpg$features$Coordinate_36)),
+                                right=as.integer(as.character(sets$cpg$features$Coordinate_36))+1,
+                                stringsAsFactors=F)
+idx <- which(is.na(sets$cpg$features$left))
+sets$cpg$features$left[idx] <- -1
+sets$cpg$features$right[idx] <- -1
+```
+
+Make sure that build is being used for the expression data.
+```{r}
+varMetadata(featureData(geo$rna))["Probe_Coordinates","Description"][1]
+coordinates <- strsplit(as.character(sets$rna$features$Probe_Coordinates), ":")
+coordinates <- sapply(coordinates, function(x) x[[1]])
+coordinates <- strsplit(coordinates, "-")
+sets$rna$features <- data.frame(geneid=rownames(sets$rna$features),
+                                chr=as.character(sets$rna$features$Chromosome),
+                                left=sapply(coordinates, function(x) x[[1]]),
+                                right=sapply(coordinates, function(x) x[[2]]),
+                                symbol=sets$rna$features$Symbol,
+                                synonyms=sets$rna$features$Synonyms,
+                                stringsAsFactors=F)
+```
+These are coordinates for probes not for genes.
+We will want gene coordinates (start and end)
+so we obtain them from BioMart.
+```{r}
+library(biomaRt)
+mart <- useMart(biomart="ENSEMBL_MART_ENSEMBL",
+                dataset="hsapiens_gene_ensembl",
+                host="may2009.archive.ensembl.org",
+                path="/biomart/martservice")
+## listAttributes(mart)
+genes <- getBM(attributes=c("hgnc_symbol", "chromosome_name", "start_position", "end_position"),
+               mart=mart)
+genes <- genes[which(genes$hgnc_symbol != ""),]
+```
+
+```{r}
+synonyms <- strsplit(as.character(sets$rna$features$synonyms), "; ")
+symbols <- rbind(data.frame(symbol=sets$rna$features$symbol,
+                            idx=1:nrow(sets$rna$features)),
+                 data.frame(symbol=unlist(synonyms),
+                            idx=rep(1:length(synonyms), sapply(synonyms, length))))
+symbols$gene.idx <- match(symbols$symbol, genes$hgnc_symbol)
+symbols <- symbols[match(1:nrow(sets$rna$features), symbols$idx),]
+idx <- which(!is.na(symbols$gene.idx))
+
+sets$rna$features$chr[idx] <- genes$chromosome_name[symbols$gene.idx[idx]]
+sets$rna$features$left[idx] <- genes$start_position[symbols$gene.idx[idx]]
+sets$rna$features$right[idx] <- genes$end_position[symbols$gene.idx[idx]]
+```
+
+Make sure that the SNP coordinates are NCBI genome build 36.
+```{r}
+sets$snp$features$GenomeBuild[1]
+```
+
+```{r}
+sets$snp$features <- data.frame(snpid=rownames(sets$snp$features),
+                                chr=sets$snp$features$Chr,
+                                pos=sets$snp$features$MapInfo,
+                                stringsAsFactors=F)
+```
+
+
+# Restrict datasets to the autosomes.
+```{r}
+for (name in names(sets)) {
+    idx <- which(sets[[name]]$features$chr %in% c(1:22, ""))
+    sets[[name]]$data <- sets[[name]]$data[idx,]
+    sets[[name]]$features <- sets[[name]]$features[idx,]
+}
+```
+The chromosome denoted by the empty string matches
+common SNP probes on the methylation microarray.
+
+# Restrict datasets to a common set of cell lines
+```{r}
+cell.lines <- sets[[1]]$samples$cell.line
+for (name in names(sets))
+    cell.lines <- intersect(cell.lines, sets[[name]]$samples$cell.line)
+```
+
+```{r}
+for (name in names(sets)) {
+    idx <- match(cell.lines, sets[[name]]$samples$cell.line)
+    sets[[name]]$samples <- sets[[name]]$samples[idx,]
+    sets[[name]]$data <- sets[[name]]$data[,idx]
+    colnames(sets[[name]]$data) <- cell.lines
+}
+```
+
+# Fix SNP identifiers
+
+```{r}
+identifiers <- gsub("^(.+)-[^-]+$", "\\1", rownames(sets$snp$data))
+rownames(sets$snp$data) <- identifiers
+sets$snp$features$snpid <- identifiers
+```
+
+
+## Calculate effect allele frequency
+```{r}
+sets$snp$eaf <- with(sets$snp, {
+    n0 <- rowSums(data == 0, na.rm=T)
+    n1 <- rowSums(data == 1, na.rm=T)
+    n2 <- rowSums(data == 2, na.rm=T)
+    n <- 2*n0 + 2*n1 + 2*n2
+    data.frame(snpid=features$snpid,
+               eaf=(2*n0 + n1)/n,
+               n=n)
+})
+write.csv(sets$snp$eaf, file=file.path(full.dir, "snp-eaf.csv"), row.names=F)
+```
+
+# Save datasets to csv files
+```{r}
+for (name in names(sets)) 
+    write.csv(sets[[name]]$data,
+              file=file.path(full.dir, paste(name, "data.csv", sep="-")),
+              quote=F)
+```
+
+```{r}
+for (name in names(sets)) 
+    write.csv(sets[[name]]$features,
+              file=file.path(full.dir, paste(name, "features.csv", sep="-")),
+              quote=F)
+```
+
+# Convert GEO SNP data to PLINK binary format
+
+http://pngu.mgh.harvard.edu/~purcell/plink/plink2.shtml
+
+PED file
+```{r}
+ped.snp <- assayData(geo$snp)$exprs
+identifiers <- gsub("^(.+)-[^-]+$", "\\1", rownames(ped.snp))
+rownames(ped.snp) <- identifiers
+ped.snp <- ped.snp[rownames(sets$snp$data), rownames(sets$snp$samples)]
+ped.snp[which(ped.snp == "NC")] <- "00"
+ped.snp <- t(ped.snp)
+ped.data <- cbind(family=1:nrow(sets$snp$samples),
+                  individual=as.character(sets$snp$samples$cell.line),
+                  paternal=-9,
+                  maternal=-9,
+                  sex=with(sets$snp$samples,
+                      sign(gsub("gender: ", "", characteristics_ch1) == "Male")+1),
+                  phenotype=-9,
+                  ped.snp)
+## It's important for speed to use cbind() here rather than data.frame()
+## because matrices can be written much faster than data frames.
+
+ped.filename <- file.path(full.dir, "snp.ped")
+system.time(write.table(ped.data, file=ped.filename,
+                        sep="\t", col.names=F, row.names=F, quote=F)) ## 30s
+```
+
+MAP file
+```{r}
+map.data <- sets$snp$features[,c("chr","snpid","pos")]
+write.table(map.data, file=file.path(full.dir, "snp.map"),
+            sep="\t", col.names=F, row.names=F, quote=F)
+```
+
+```{r}
+cmd <- paste("plink --file", file.path(full.dir, "snp"),
+             "--map3",
+             "--out", file.path(full.dir, "snp"),
+             "--make-bed")
+system(cmd) ## 1 minute
+```
+
+## Smaller version of the dataset (chromosomes 11 and 15)
+
+We extract all data just from chromosomes 11, 15 and 21
+(because top meQTLs, eQTLs and other interesting examples are on these chromosomes).
+```{r}
+chromosomes <- c("11", "15", "21")
+```
+
+We also want to retain the SNPs used to match methylation and genetic profiles.
+```{r}
+match.snps <- sets$cpg$feature$geneid[which(sets$cpg$features$chr == "")]
+match.snps <- sapply(match.snps, function(snp)
+                     colnames(ped.data)[grep(paste(snp, "-", sep=""), colnames(ped.data))])
+```
+
+We save subsets of the csv files:
+```{r}
+for (name in names(sets)) {
+    idx <- which(sets[[name]]$features$chr %in% chromosomes)
+    if (name == "snp")
+        idx <- c(idx, which(sets[[name]]$features$snpid %in% match.snps))
+    if (name == "cpg")
+        idx <- c(idx, which(sets[[name]]$features$geneid %in% match.snps))
+    idx <- unique(idx)
+    write.csv(sets[[name]]$data[idx,],
+              file=file.path(data.dir, paste(name, "data.csv", sep="-")),
+              quote=F)
+    write.csv(sets[[name]]$features[idx,],
+              file=file.path(data.dir, paste(name, "features.csv", sep="-")),
+              quote=F)   
+}
+```
+
+We save a subset of the SNP dataset in PLINK format.
+```{r}
+idx <- which(map.data$chr %in% chromosomes)
+idx <- c(idx, which(map.data$snpid %in% unlist(match.snps)))
+idx <- unique(idx)
+
+snp.subset <- as.character(map.data$snpid[idx])
+
+ped.subset <- c("family", "individual", "paternal", "maternal", "sex", "phenotype", snp.subset)
+
+write.table(ped.data[,ped.subset], file=file.path(data.dir, "snp.ped"),
+            sep="\t", col.names=F, row.names=F, quote=F)
+
+write.table(map.data[idx,], file=file.path(data.dir, "snp.map"),
+            sep="\t", col.names=F, row.names=F, quote=F)
+
+cmd <- paste("plink --file", file.path(data.dir, "snp"),
+             "--map3",
+             "--out", file.path(data.dir, "snp"),
+             "--make-bed")
+system(cmd) 
+```

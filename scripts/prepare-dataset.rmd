@@ -1,0 +1,225 @@
+# Simulate a BMI variable for eQTL and meQTL analyses
+
+The following large GWAS identifies 32 SNPs associated with BMI.
+
+> Speliotes EK, Willer CJ, Berndt SI, Monda KL, Thorleifsson G, Jackson
+> AU et al. Association analyses of 249,796 individuals reveal 18 new
+> loci associated with body mass index. Nat Genet 2010; 42: 937–948.
+
+```r
+bmi.snps <- read.csv("bmi-snps.csv", stringsAsFactors=F)
+```
+
+The following EWAS identifies a CpG site associated with BMI in skin.
+
+> Dick, et al.
+> DNA methylation and body-mass index: a genome-wide analysis.
+> Lancet. 2014 Jun 7;383(9933):1990-8. doi: 10.1016/S0140-6736(13)62674-4. Epub 2014 Mar 13.
+> PMID: 24630777
+
+From Table 3, this is CpG site cg27146050 (p = 0.011, % change in BMI = -7)
+(on chr19).
+
+The following skin eQTL analysis identified NEGR1 eQTL
+rs2568958-A as associated with BMI (chr1).
+
+> Ding, et al.  Gene expression in skin and lymphoblastoid cells:
+> Refined statistical method reveals extensive overlap in cis-eQTL
+> signals.  Am J Hum Genet. 2010 Dec 10;87(6):779-89. doi:
+> 10.1016/j.ajhg.2010.10.024.  PMID: 21129726
+
+Effect is 4.66 (p = 9.9E-8).
+
+> Thorleifsson, et al.
+> Genome-wide association yields new sequence variants at seven loci that associate with measures of obesity.
+> Nat Genet. 2009 Jan;41(1):18-24. doi: 10.1038/ng.274. Epub 2008 Dec 14.
+> PMID: 19079260
+
+
+```r
+snp <- as.matrix(read.csv(file.path(full.dir, "snp-data.csv"), row.names=1,stringsAsFactors=F))
+rna <- as.matrix(read.csv(file.path(full.dir, "rna-data.csv"), row.names=1,stringsAsFactors=F))
+cpg <- as.matrix(read.csv(file.path(full.dir, "cpg-data.csv"),row.names=1,stringsAsFactors=F))
+```
+
+```r
+snp.features <- read.csv(file.path(full.dir, "snp-features.csv"),stringsAsFactors=F,row.names=1)
+rna.features <- read.csv(file.path(full.dir, "rna-features.csv"),stringsAsFactors=F,row.names=1)
+cpg.features <- read.csv(file.path(full.dir, "cpg-features.csv"),stringsAsFactors=F,row.names=1)
+negr1.id <- rna.features$geneid[which(rna.features$symbol == "NEGR1")]
+```
+
+```r
+r <- cor(cpg["cg27146050",], snp["rs2568958",], use="p")
+```
+
+```r
+new.cpg <- cpg["cg27146050",] + sign(r)*scale(snp["rs2568958",])*sd(cpg["cg27146050",], na.rm=T)
+cor.test(new.cpg, snp["rs2568958",])
+quantile(new.cpg, na.rm=T)
+cor(cpg["cg27146050",], new.cpg, use="p")
+cor(snp["rs2568958",], new.cpg, use="p")
+cpg["cg27146050",] <- new.cpg
+```
+
+Make the NEGR1 gene associated with rs2568958, cg27146050 and it's promoter CpG sites.
+```r
+negr1.sites <- with(cpg.features, geneid[which(chr == 1 & left >= 72495896 & right <= 72545890)])
+x <- rbind(snp["rs2568958",,drop=F],
+           cpg["cg27146050",,drop=F],
+           cpg[negr1.sites,])
+r <- apply(x, 1, function(x) cor(x,rna[negr1.id,],use="p"))
+y <- apply(sign(r)*r^6*t(apply(x, 1, scale)), 2, sum, na.rm=T)
+new.negr1 <- rna[negr1.id,] + scale(y) * sd(rna[negr1.id,])
+
+cor(new.negr1, rna[negr1.id,])
+sort(apply(x, 1, function(x) cor(x, new.negr1, use="p")))
+sort(apply(x, 1, function(x) cor.test(x, new.negr1)$p.value))
+
+rna[negr1.id,] <- new.negr1
+```
+
+
+```r
+cor(snp["rs2815752",], snp["rs2568958",])
+bmi.snps <- bmi.snps[which(bmi.snps$snp != "rs2815752"),]
+```
+
+Try to create a BMI variable correlated  with the following:
+```r
+bmi.snps <- bmi.snps[which(bmi.snps$snp %in% rownames(snp)),]
+x <- rbind(cpg["cg27146050",,drop=F],
+           snp["rs2568958",,drop=F],
+           rna[negr1.id,,drop=F],
+           snp[match(bmi.snps$snp, rownames(snp)),],
+           cpg[negr1.sites,,drop=F])
+meds <- apply(x, 1, median, na.rm=T)
+missing.idx <- which(is.na(x),arr.ind=T)
+x[missing.idx] <- meds[missing.idx[,"row"]]
+```
+
+The SNP betas from the Speliotes study are all positive
+and yet many of the SNPs are negatively correlated.
+```r
+r <- apply(snp[match(bmi.snps$snp, rownames(snp)),],
+           1,
+           function(x) cor(x, cpg["cg27146050",], use="p"))
+bmi.snps$beta <- abs(bmi.snps$beta) * sign(-r)
+```
+
+Effect sizes to use (correspond to rows of x).
+```r
+b <- c(-5,
+       0.9,
+       5,
+       3*bmi.snps$beta,
+       rep(1, length(negr1.sites)))
+```
+
+Make the BMI variable by refining it iteratively.
+```r
+set.seed(20160311)
+bmi.est <- scale(as.vector(b %*% x)) + 26
+w <- abs(b)/sum(abs(b))
+for (j in 1:1000) {
+    r <- apply(x,1,function(y) cor(y,bmi.est))
+    k <- sample(1:length(r), size=1, prob=w*(1-abs(r)))
+    bmi.est <<- bmi.est + b[k]*x[k,] + rnorm(length(bmi.est), sd=0.25*sd(bmi.est))
+    bmi.est <<- scale(bmi.est) + 26
+}
+```
+
+How did we do with respect to associations with SNPs, CpGs and genes?
+```r
+p.bmi <- apply(x,1,function(y) cor.test(y,bmi.est)$p.value)
+p.bmi
+```
+
+Which chromosomes do we really want?
+```r
+idx <- match(rownames(x), c(rna.features$geneid, snp.features$snpid, cpg.features$geneid))
+x.chr <- c(rna.features$chr, snp.features$chr, cpg.features$chr)[idx]
+x.chr
+```
+
+We make a smaller dataset with just chromosomes 1 and 19
+(and chromosomes 15 and 21
+because top meQTLs, eQTLs and other interesting examples are on these chromosomes).
+```{r}
+chromosomes <- c("1", "15", "19", "21")
+```
+
+We also want to retain the SNPs used to match methylation and genetic profiles.
+```{r}
+match.snps <- cpg.features$geneid[which(is.na(cpg.features$chr))]
+match.snps <- intersect(match.snps, snp.features$snpid)
+```
+
+We save subsets of the csv files:
+```{r}
+idx <- which(snp.features$chr %in% chromosomes | snp.features$snpid %in% match.snps)
+write.csv(snp[idx,], file.path(data.dir, "snp-data.csv"), quote=F)
+write.csv(snp.features[idx,], file.path(data.dir, "snp-features.csv"), quote=F)
+
+idx <- which(cpg.features$chr %in% chromosomes | cpg.features$geneid %in% match.snps)
+write.csv(cpg[idx,], file.path(data.dir, "cpg-data.csv"), quote=F)
+write.csv(cpg.features[idx,], file.path(data.dir, "cpg-features.csv"), quote=F)
+
+idx <- which(rna.features$chr %in% chromosomes)
+write.csv(rna[idx,], file.path(data.dir, "rna-data.csv"), quote=F)
+write.csv(rna.features[idx,], file.path(data.dir, "rna-features.csv"), quote=F)
+```
+
+We save a subset of the SNP dataset in PLINK format.
+```{r}
+idx <- which(snp.features$chr %in% chromosomes | snp.features$snpid %in% match.snps)
+snp.subset <- as.character(snp.features$snpid[idx])
+
+library(GEOquery)
+geo <- getGEO("GSE53261", destdir=full.dir)
+geo <- geo[[which(names(geo) == "GSE53261-GPL6984_series_matrix.txt.gz")]]
+
+ped.snp <- assayData(geo)$exprs
+identifiers <- gsub("^(.+)-[^-]+$", "\\1", rownames(ped.snp))
+rownames(ped.snp) <- identifiers
+snp.samples <- pData(geo)
+snp.samples$cell.line <- snp.samples$source_name_ch1
+snp.samples <- snp.samples[match(colnames(snp), snp.samples$cell.line),]
+ped.snp <- ped.snp[snp.subset, rownames(snp.samples)]
+ped.snp[which(ped.snp == "NC")] <- "00"
+ped.snp <- t(ped.snp)
+ped.data <- cbind(family=1:nrow(ped.snp),
+                  individual=as.character(snp.samples$cell.line),
+                  paternal=-9,
+                  maternal=-9,
+                  sex=with(snp.samples,
+                      sign(gsub("gender: ", "", characteristics_ch1) == "Male")+1),
+                  phenotype=-9,
+                  ped.snp)
+
+write.table(ped.data, file=file.path(data.dir, "snp.ped"),
+            sep="\t", col.names=F, row.names=F, quote=F)
+
+map.data <- snp.features[idx,c("chr","snpid","pos")]
+write.table(map.data, file=file.path(data.dir, "snp.map"),
+            sep="\t", col.names=F, row.names=F, quote=F)
+
+cmd <- paste("plink --file", file.path(data.dir, "snp"),
+             "--map3",
+             "--out", file.path(data.dir, "snp"),
+             "--make-bed")
+system(cmd) 
+```
+
+Save the BMI estimates:
+```r
+bmi.est <- data.frame(id=colnames(snp), bmi=as.vector(bmi.est))
+write.csv(bmi.est, file=file.path(data.dir, "bmi.csv"), row.names=F)
+```
+
+Save effect allele frequencies:
+```r
+eaf <- read.csv(file.path(full.dir, "snp-eaf.csv"), stringsAsFactors=F)
+eaf <- eaf[match(rownames(snp), eaf$snpid),]
+write.csv(eaf, file=file.path(data.dir, "snp-eaf.csv"), row.names=F)
+```
