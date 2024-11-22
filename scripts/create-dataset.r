@@ -10,7 +10,7 @@ download.url <- function(url, dir) {
         download.file(url, destfile=desfile)
 }
 
-dir.create(output.dir <- "output")
+dir.create(output.dir <- ".")
 
 full.dir <- file.path(output.dir, "data-full")
 data.dir <- file.path(output.dir, "data")

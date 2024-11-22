@@ -1,11 +1,17 @@
-PLINK v1.90b3f 64-bit (2 Mar 2015) 
-9 arguments: --bfile data/snp --cluster --mds-plot 2 --out output/plink --read-genome output/plink.genome
-Hostname: node47-019
-Working directory: /newhome/ms13525/genetic-epidemiology-practicals/Other-omics
-Start time: Thu Apr 22 12:09:05 2021
+PLINK v1.9.0-b.7.7 64-bit (22 Oct 2024)
+Options in effect:
+  --bfile data/snp
+  --cluster
+  --mds-plot 2
+  --out output/plink
+  --read-genome output/plink.genome
 
-Random number seed: 1619089745
-64496 MB RAM detected; reserving 32248 MB for main workspace.
+Hostname: IT099859
+Working directory: /mnt/c/Users/ms13525/Documents/github/matrixeqtl-tutorial
+Start time: Fri Nov 22 11:39:48 2024
+
+Random number seed: 1732275588
+7789 MB RAM detected; reserving 3894 MB for main workspace.
 178232 variants loaded from .bim file.
 57 people (29 males, 28 females) loaded from .fam.
 Using 1 thread (no multithreaded calculations invoked).
@@ -17,7 +23,8 @@ Note: No phenotypes present.
 Clustering... done.
 Cluster solution written to output/plink.cluster1 , output/plink.cluster2 , and
 output/plink.cluster3 .
-Performing multidimensional scaling analysis (2 dimensions)... done.
+Performing multidimensional scaling analysis (SVD algorithm, 2
+dimensions)... done.
 MDS solution written to output/plink.mds .
 
-End time: Thu Apr 22 12:09:05 2021
+End time: Fri Nov 22 11:39:52 2024
